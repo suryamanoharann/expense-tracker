@@ -99,7 +99,7 @@ expense-tracker/
 | Authentication    | Explicitly out of scope per spec — single user, local only        |
 | Test suite        | Explicitly out of scope per spec — manual end-to-end testing done |
 | Pagination        | Not needed at personal scale — all matching rows load fine        |
-| CSV / PDF export  | Nice to have, not required by spec                                |
+| CSV / PDF export  | not required by spec                                |
 | Deployment config | Local only per spec — no gunicorn, nginx, or Docker needed        |
 | Multi-currency    | Explicitly out of scope per spec                                  |
 
