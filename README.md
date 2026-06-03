@@ -1,4 +1,4 @@
-# SpendLog — Personal Expense Tracker
+# Expense Tracker
 
 A clean, single-user personal expense tracker built with Python (Flask), MySQL (XAMPP), and plain HTML/CSS/JS. No framework, no build step, runs locally.
 
