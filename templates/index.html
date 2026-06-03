@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpendLog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">₹</span>
+        <span class="logo-text">SpendLog</span>
+      </div>
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="expenses">Expenses</button>
+        <button class="tab-btn" data-tab="summary">Summary</button>
+      </nav>
+      <button class="btn-add-main" id="btnOpenAdd">+ Add Expense</button>
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <section class="tab-panel active" id="tab-expenses">
+      <div class="filters-bar">
+        <div class="filter-group">
+          <label>Search</label>
+          <input type="text" id="filterSearch" placeholder="Coffee, rent…" />
+        </div>
+        <div class="filter-group">
+          <label>Category</label>
+          <select id="filterCategory">
+            <option value="">All</option>
+            <option>Food</option><option>Transport</option><option>Shopping</option>
+            <option>Bills</option><option>Entertainment</option><option>Other</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>From</label>
+          <input type="date" id="filterFrom" />
+        </div>
+        <div class="filter-group">
+          <label>To</label>
+          <input type="date" id="filterTo" />
+        </div>
+        <button class="btn-ghost" id="btnClearFilters">Clear</button>
+      </div>
+      <div id="expenseList" class="expense-list">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">🧾</div>
+          <p>No expenses yet.<br/>Hit <strong>+ Add Expense</strong> to start.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-summary">
+      <div class="summary-controls">
+        <button class="month-nav" id="btnPrevMonth">&#8592;</button>
+        <span class="month-label" id="monthLabel">—</span>
+        <button class="month-nav" id="btnNextMonth">&#8594;</button>
+      </div>
+      <div class="summary-card total-card">
+        <span class="summary-label">Total Spent</span>
+        <span class="summary-amount" id="summaryTotal">₹0.00</span>
+      </div>
+      <div id="summaryBreakdown" class="category-breakdown"></div>
+      <div class="empty-state hidden" id="summaryEmpty">
+        <div class="empty-icon">📊</div>
+        <p>No expenses this month.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ADD / EDIT MODAL -->
+  <div class="modal-overlay hidden" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add Expense</h2>
+        <button class="modal-close" id="btnCloseModal">&times;</button>
+      </div>
+      <div class="form-error hidden" id="formError"></div>
+      <form id="expenseForm" autocomplete="off">
+        <input type="hidden" id="editId" />
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Title <span class="req">*</span></label>
+            <input type="text" id="fTitle" placeholder="e.g. Coffee at Starbucks" maxlength="255" required />
+          </div>
+        </div>
+        <div class="form-row two-col">
+          <div class="form-group">
+            <label>Amount (₹) <span class="req">*</span></label>
+            <input type="number" id="fAmount" placeholder="0.00" step="0.01" min="0.01" required />
+          </div>
+          <div class="form-group">
+            <label>Category <span class="req">*</span></label>
+            <select id="fCategory" required>
+              <option value="" disabled selected>Pick one…</option>
+              <option>Food</option><option>Transport</option><option>Shopping</option>
+              <option>Bills</option><option>Entertainment</option><option>Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Date <span class="req">*</span></label>
+            <input type="date" id="fDate" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Note <span class="optional">(optional)</span></label>
+            <textarea id="fNote" rows="2" placeholder="Any extra detail…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-ghost" id="btnCancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="btnSubmit">Save Expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- DELETE CONFIRM -->
+  <div class="modal-overlay hidden" id="confirmOverlay">
+    <div class="modal confirm-modal">
+      <p>Delete this expense? This cannot be undone.</p>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="btnConfirmCancel">Cancel</button>
+        <button class="btn-danger" id="btnConfirmDelete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+const API = '/api';
+let allExpenses = [], pendingDeleteId = null;
+let summaryYear = new Date().getFullYear(), summaryMonth = new Date().getMonth() + 1;
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const CAT_COLORS = {Food:'var(--cat-food)',Transport:'var(--cat-transport)',Shopping:'var(--cat-shopping)',Bills:'var(--cat-bills)',Entertainment:'var(--cat-entertainment)',Other:'var(--cat-other)'};
+
+const $ = id => document.getElementById(id);
+const fmt = n => '₹' + Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtDate = d => new Date(d+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const today = () => new Date().toISOString().slice(0,10);
+
+async function apiFetch(url, opts={}) {
+  const res = await fetch(API+url, {headers:{'Content-Type':'application/json'}, ...opts});
+  const data = await res.json();
+  if (!res.ok) throw data;
+  return data;
+}
+
+async function loadExpenses() {
+  const p = new URLSearchParams();
+  if ($('filterSearch').value.trim())  p.set('search',    $('filterSearch').value.trim());
+  if ($('filterCategory').value)       p.set('category',  $('filterCategory').value);
+  if ($('filterFrom').value)           p.set('date_from', $('filterFrom').value);
+  if ($('filterTo').value)             p.set('date_to',   $('filterTo').value);
+  try {
+    allExpenses = await apiFetch('/expenses?' + p);
+    renderList(allExpenses);
+  } catch { toast('Failed to load expenses.','error'); }
+}
+
+function renderList(list) {
+  document.querySelectorAll('.expense-card').forEach(el => el.remove());
+  $('emptyState').classList.toggle('hidden', list.length > 0);
+  list.forEach(exp => {
+    const card = document.createElement('div');
+    card.className = 'expense-card';
+    card.innerHTML = `
+      <div class="cat-dot" data-cat="${exp.category}"></div>
+      <div class="expense-info">
+        <div class="expense-title">${esc(exp.title)}</div>
+        <div class="expense-meta">
+          <span class="cat-badge" data-cat="${exp.category}">${exp.category}</span>
+          <span>${fmtDate(exp.date)}</span>
+        </div>
+        ${exp.note ? `<div class="expense-note">${esc(exp.note)}</div>` : ''}
+      </div>
+      <div class="expense-right">
+        <div class="expense-amount">${fmt(exp.amount)}</div>
+        <div class="expense-actions">
+          <button class="btn-icon btn-edit"   data-id="${exp.id}">✏️</button>
+          <button class="btn-icon btn-delete" data-id="${exp.id}">🗑️</button>
+        </div>
+      </div>`;
+    $('expenseList').appendChild(card);
+  });
+}
+
+function openModal(exp=null) {
+  $('formError').classList.add('hidden');
+  $('expenseForm').reset();
+  $('editId').value = '';
+  if (exp) {
+    $('modalTitle').textContent = 'Edit Expense';
+    $('btnSubmit').textContent  = 'Save Changes';
+    $('editId').value    = exp.id;
+    $('fTitle').value    = exp.title;
+    $('fAmount').value   = exp.amount;
+    $('fCategory').value = exp.category;
+    $('fDate').value     = exp.date;
+    $('fNote').value     = exp.note || '';
+  } else {
+    $('modalTitle').textContent = 'Add Expense';
+    $('btnSubmit').textContent  = 'Save Expense';
+    $('fDate').value = today();
+  }
+  $('modalOverlay').classList.remove('hidden');
+  $('fTitle').focus();
+}
+const closeModal = () => $('modalOverlay').classList.add('hidden');
+
+$('expenseForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('formError').classList.add('hidden');
+  $('btnSubmit').disabled = true;
+  const id = $('editId').value;
+  const payload = {
+    title:    $('fTitle').value.trim(),
+    amount:   parseFloat($('fAmount').value),
+    category: $('fCategory').value,
+    date:     $('fDate').value,
+    note:     $('fNote').value.trim(),
+  };
+  try {
+    if (id) { await apiFetch(`/expenses/${id}`,{method:'PUT',body:JSON.stringify(payload)}); toast('Expense updated!'); }
+    else    { await apiFetch('/expenses',{method:'POST',body:JSON.stringify(payload)}); toast('Expense added!'); }
+    closeModal(); loadExpenses();
+    if ($('tab-summary').classList.contains('active')) loadSummary();
+  } catch(err) {
+    $('formError').innerHTML = err.errors ? err.errors.join('<br/>') : (err.error||'Something went wrong.');
+    $('formError').classList.remove('hidden');
+  } finally {
+    $('btnSubmit').disabled = false;
+    $('btnSubmit').textContent = $('editId').value ? 'Save Changes' : 'Save Expense';
+  }
+});
+
+$('expenseList').addEventListener('click', e => {
+  const edit = e.target.closest('.btn-edit');
+  const del  = e.target.closest('.btn-delete');
+  if (edit) { const exp = allExpenses.find(x => x.id == edit.dataset.id); if(exp) openModal(exp); }
+  if (del)  { pendingDeleteId = del.dataset.id; $('confirmOverlay').classList.remove('hidden'); }
+});
+
+$('btnConfirmDelete').addEventListener('click', async () => {
+  $('confirmOverlay').classList.add('hidden');
+  try {
+    await apiFetch(`/expenses/${pendingDeleteId}`,{method:'DELETE'});
+    toast('Deleted.'); loadExpenses();
+    if ($('tab-summary').classList.contains('active')) loadSummary();
+  } catch { toast('Delete failed.','error'); }
+  pendingDeleteId = null;
+});
+$('btnConfirmCancel').addEventListener('click', () => { $('confirmOverlay').classList.add('hidden'); pendingDeleteId = null; });
+
+async function loadSummary() {
+  $('monthLabel').textContent = `${MONTHS[summaryMonth-1]} ${summaryYear}`;
+  try {
+    const data = await apiFetch(`/summary?year=${summaryYear}&month=${summaryMonth}`);
+    $('summaryTotal').textContent = fmt(data.total);
+    const wrap = $('summaryBreakdown');
+    wrap.innerHTML = '';
+    const entries = Object.entries(data.breakdown);
+    $('summaryEmpty').classList.toggle('hidden', entries.length > 0);
+    const maxVal = Math.max(...entries.map(([,v])=>v), 0);
+    entries.forEach(([cat,val]) => {
+      const pct = maxVal > 0 ? (val/maxVal*100).toFixed(1) : 0;
+      const row = document.createElement('div');
+      row.className = 'cat-row';
+      row.innerHTML = `
+        <div class="cat-row-label"><span class="cat-dot" data-cat="${cat}"></span><span>${cat}</span></div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${pct}%;background:${CAT_COLORS[cat]}"></div></div>
+        <div class="cat-row-amount">${fmt(val)}</div>`;
+      wrap.appendChild(row);
+    });
+  } catch { toast('Failed to load summary.','error'); }
+}
+
+$('btnPrevMonth').addEventListener('click', () => { summaryMonth--; if(summaryMonth<1){summaryMonth=12;summaryYear--;} loadSummary(); });
+$('btnNextMonth').addEventListener('click', () => { summaryMonth++; if(summaryMonth>12){summaryMonth=1;summaryYear++;} loadSummary(); });
+
+document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  $('tab-'+btn.dataset.tab).classList.add('active');
+  if (btn.dataset.tab==='summary') loadSummary();
+}));
+
+let ft;
+const debouncedLoad = () => { clearTimeout(ft); ft = setTimeout(loadExpenses,350); };
+$('filterSearch').addEventListener('input', debouncedLoad);
+$('filterCategory').addEventListener('change', loadExpenses);
+$('filterFrom').addEventListener('change', loadExpenses);
+$('filterTo').addEventListener('change', loadExpenses);
+$('btnClearFilters').addEventListener('click', () => {
+  ['filterSearch','filterCategory','filterFrom','filterTo'].forEach(id => $(id).value='');
+  loadExpenses();
+});
+
+$('btnOpenAdd').addEventListener('click', ()=>openModal());
+$('btnCloseModal').addEventListener('click', closeModal);
+$('btnCancel').addEventListener('click', closeModal);
+$('modalOverlay').addEventListener('click', e => { if(e.target===$('modalOverlay')) closeModal(); });
+
+function toast(msg, type='success') {
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:1.5rem;right:1.5rem;z-index:999;background:${type==='error'?'#7f1d1d':'#14532d'};border:1px solid ${type==='error'?'rgba(224,82,82,.4)':'rgba(76,187,138,.4)'};color:${type==='error'?'#fca5a5':'#86efac'};padding:.65rem 1.1rem;border-radius:8px;font-size:.875rem;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:300px`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3000);
+}
+
+loadExpenses();
+  </script>
+</body>
+</html>
